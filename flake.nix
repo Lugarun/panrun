@@ -21,7 +21,11 @@
                 pkgs.zlib
               ]);
           };
-          devShells.default = packages.panrun.env;
+          packages.default = packages.panrun;
+          overlays.default = final: prev: {
+            panrun = self.packages.panrun;
+          };
+          devShells.default = packages.default.env;
         }
     );
 }

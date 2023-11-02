@@ -1,2 +1,2 @@
 build:
-	nix build .#panrun
+	nix build .
