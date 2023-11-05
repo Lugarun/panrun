@@ -68,10 +68,11 @@ getCodeBlockCode :: Block -> Maybe T.Text
 getCodeBlockCode (CodeBlock (_, _, _) c) = Just c
 getCodeBlockCode _ = Nothing
 
-outputResults :: T.Text -> T.Text -> T.Text -> IO ()
-outputResults lang pipe code = do
+outputResults :: T.Text -> T.Text -> [Int] -> T.Text -> IO ()
+outputResults lang pipe position code = do
   T.putStrLn $ lang
   T.putStrLn $ pipe
+  T.putStrLn $ T.unwords $ map (T.pack . show) position
   T.putStrLn $ code
 
 ok :: Panrun -> IO()
@@ -81,12 +82,14 @@ ok args = do
   let md = runPure $ readMarkdown def{ readerExtensions = getDefaultExtensions $ T.pack "markdown" } str
   let cmd = runPure $ readCommonMark def {readerExtensions = extensionsFromList [Ext_sourcepos, Ext_fenced_code_attributes, Ext_fenced_code_blocks]} str
   let codeBlockMask = cmd <&> getCodeBlocks <&> map (containsPosition (position args))
+  let cmsCodeBlock = either (\_ -> Nothing) id $ cmd <&> getCodeBlocks <&> find (containsPosition (position args))
   let codeBlocks = md <&> getCodeBlocks
   let codeBlock = (either (\_ -> Nothing) id $ (\m b -> (find fst (zip m b))) `fmap` codeBlockMask <*> codeBlocks )<&> snd
   let pipe = codeBlock >>= (\x -> getCodeBlockAttrByKey x $ T.pack "pipe")
   let code = codeBlock >>= getCodeBlockCode
   let lang = codeBlock >>= getCodeBlockLang
-  fromJust $ outputResults <$> lang <*> pipe <*> code
+  let position = cmsCodeBlock >>= getPosition
+  fromJust $ outputResults <$> lang <*> pipe <*> position <*> code
 
 main :: IO ()
 main = execParser opts >>= ok
