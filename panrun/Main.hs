@@ -1,5 +1,4 @@
 module Main where
-
 import Options.Applicative
 import System.IO
 import System.Directory
@@ -19,6 +18,7 @@ import qualified Data.Text as T
 data Panrun = Panrun
   { file :: FilePath
   , position :: Int
+  , pipeClass :: String
   } deriving (Show)
 
 argParser :: Parser Panrun
@@ -31,6 +31,12 @@ argParser = Panrun
      ( long "line_number"
     <> short 'n'
     <> help "Line number in the code block" )
+  <*> strOption
+     ( long "pipe_class"
+    <> short 'p'
+    <> showDefault
+    <> value "pipe"
+    <> help "Name of pipe information in markdown" )
 
 getPosition :: Block -> Maybe [Int]
 getPosition (CodeBlock (id, classes, kv) content) = range
@@ -85,7 +91,7 @@ ok args = do
   let cmsCodeBlock = either (\_ -> Nothing) id $ cmd <&> getCodeBlocks <&> find (containsPosition (position args))
   let codeBlocks = md <&> getCodeBlocks
   let codeBlock = (either (\_ -> Nothing) id $ (\m b -> (find fst (zip m b))) `fmap` codeBlockMask <*> codeBlocks )<&> snd
-  let pipe = codeBlock >>= (\x -> getCodeBlockAttrByKey x $ T.pack "pipe")
+  let pipe = codeBlock >>= (\x -> getCodeBlockAttrByKey x $ T.pack $ pipeClass args)
   let code = codeBlock >>= getCodeBlockCode
   let lang = codeBlock >>= getCodeBlockLang
   let position = cmsCodeBlock >>= getPosition
