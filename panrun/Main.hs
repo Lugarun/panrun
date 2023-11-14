@@ -5,6 +5,7 @@ import System.Directory
 import Data.List
 import Data.Functor
 import Data.Maybe
+import Data.Either
 import Text.Read
 import Text.Regex
 import Text.Pandoc
@@ -16,18 +17,14 @@ import qualified Data.Text.IO as T
 import qualified Data.Text as T
 
 data Panrun = Panrun
-  { file :: FilePath
-  , position :: Int
+  { position :: Int
   , pipeClass :: String
+  , file :: FilePath
   } deriving (Show)
 
 argParser :: Parser Panrun
 argParser = Panrun
-  <$> strOption
-     ( long "file"
-    <> short 'f'
-    <> help "You guessed it, the markdown file" )
-  <*> option auto
+  <$> option auto
      ( long "line_number"
     <> short 'n'
     <> help "Line number in the code block" )
@@ -37,6 +34,11 @@ argParser = Panrun
     <> showDefault
     <> value "pipe"
     <> help "Name of pipe information in markdown" )
+  <*> strArgument
+     ( metavar "FILE"
+    <> showDefault
+    <> value "-"
+    <> help "Input markdown file; with no FILE, or when FILE is -, read standard input " )
 
 getPosition :: Block -> Maybe [Int]
 getPosition (CodeBlock (id, classes, kv) content) = range
@@ -76,33 +78,57 @@ getCodeBlockCode _ = Nothing
 
 outputResults :: T.Text -> T.Text -> [Int] -> T.Text -> IO ()
 outputResults lang pipe position code = do
-  T.putStrLn $ lang
-  T.putStrLn $ pipe
+  T.putStrLn lang
+  T.putStrLn pipe
   T.putStrLn $ T.unwords $ map (T.pack . show) position
-  T.putStrLn $ code
+  T.putStrLn code
 
-ok :: Panrun -> IO()
-ok args = do
+main :: IO ()
+main = do
+  args <- execParser opts
+
+  -- read file or stdin
   fileExists <- doesFileExist (file args)
-  str <- T.readFile (file args)
-  let md = runPure $ readMarkdown def{ readerExtensions = getDefaultExtensions $ T.pack "markdown" } str
-  let cmd = runPure $ readCommonMark def {readerExtensions = extensionsFromList [Ext_sourcepos, Ext_fenced_code_attributes, Ext_fenced_code_blocks]} str
-  let codeBlockMask = cmd <&> getCodeBlocks <&> map (containsPosition (position args))
-  let cmsCodeBlock = either (\_ -> Nothing) id $ cmd <&> getCodeBlocks <&> find (containsPosition (position args))
-  let codeBlocks = md <&> getCodeBlocks
-  let codeBlock = (either (\_ -> Nothing) id $ (\m b -> (find fst (zip m b))) `fmap` codeBlockMask <*> codeBlocks )<&> snd
+  str <-
+    if file args == "-"
+    then T.getContents
+    else T.readFile (file args)
+
+  -- get codeblocks via commonmark (for source mapping) and markdown (for meta data)
+  let mdcb = runPure $ readMarkdown markdownOptions str <&> getCodeBlocks
+  let cmdcb = runPure $ readCommonMark commonMarkOptions str <&> getCodeBlocks
+
+  -- find codeblock at the given line number
+  let codeBlockMask =
+       cmdcb <&> map (containsPosition (position args))
+  let cmsCodeBlock = either
+       (const Nothing)
+       (find (containsPosition (position args)))
+       cmdcb
+  let codeBlock = fromRight
+       Nothing
+       ((\m b -> find fst (zip m b)) `fmap` codeBlockMask <*> mdcb)
+       <&> snd
+
+  -- extract relevent metadata
   let pipe = codeBlock >>= (\x -> getCodeBlockAttrByKey x $ T.pack $ pipeClass args)
   let code = codeBlock >>= getCodeBlockCode
   let lang = codeBlock >>= getCodeBlockLang
   let position = cmsCodeBlock >>= getPosition
-  fromJust $ outputResults <$> lang <*> pipe <*> position <*> code
 
-main :: IO ()
-main = execParser opts >>= ok
+  -- format output
+  fromJust $ outputResults <$> lang <*> pipe <*> position <*> code
   where
     opts = info (argParser <**> helper)
       ( fullDesc
      <> progDesc "Run and extract code blocks with meta data."
      <> header "panrun - a code runner for markdown" )
+    commonMarkOptions = def
+      { readerExtensions = extensionsFromList
+        [ Ext_sourcepos
+        , Ext_fenced_code_attributes
+        , Ext_fenced_code_blocks ] }
+    markdownOptions = def
+      { readerExtensions = getDefaultExtensions $ T.pack "markdown" }
 
 

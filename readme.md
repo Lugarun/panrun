@@ -18,12 +18,12 @@ echo hello world
 echo I miss babel
 ```
 
-Then we can run `nix run .#panrun -- -f readme.md -n 14` to get the following:
+Then we can run `nix run .#panrun -- -n 18 readme.md` to get the following:
 
 ```
 sh
 bash
-14 18
+16 20
 echo hello world
 echo I miss babel
 ```
